@@ -3,8 +3,11 @@ import os
 import json
 import argparse
 import datetime
+import traceback
 from dotenv import load_dotenv
-from core.wiki import search_player, get_player_page
+
+# Import from the new wiki_fix module instead of the original wiki module
+from core.wiki_fix import search_player, get_player_page, get_player_info, is_footballer, suggest_players
 from core.parser import extract_career_info, obscure_player_name
 
 # Load environment variables
@@ -17,6 +20,12 @@ app = Flask(__name__,
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key_for_football_quiz')
 app.config['DEBUG'] = os.getenv('FLASK_ENV', 'development') == 'development'
+
+# Configure more detailed logging
+if app.config['DEBUG']:
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
 
 @app.route('/')
 def home():
@@ -40,7 +49,7 @@ def quiz():
     if not player_name:
         return redirect(url_for('home'))
     
-    return render_template('quiz.html', player_name=player_name, now=datetime.datetime.now())
+    return render_template('quiz_improved.html', player_name=player_name, now=datetime.datetime.now())
 
 @app.route('/api/player', methods=['GET'])
 def get_player_data():
@@ -50,50 +59,131 @@ def get_player_data():
         return jsonify({'error': 'Player name is required'}), 400
     
     try:
-        # Search for the player on Wikipedia
-        search_results = search_player(player_name)
-        if not search_results:
-            return jsonify({'error': 'Player not found'}), 404
+        app.logger.info(f"Processing request for player: {player_name}")
         
-        # Get the player's Wikipedia page
-        page_html = get_player_page(search_results[0])
+        # Use the improved get_player_info function which handles both search and page retrieval
+        page_title, page_html = get_player_info(player_name)
+        
+        if not page_title:
+            app.logger.warning(f"No Wikipedia page found for player: {player_name}")
+            return jsonify({
+                'error': 'Player not found',
+                'details': 'No matching Wikipedia page could be found. Try a different spelling or a more specific name.'
+            }), 404
+        
         if not page_html:
-            return jsonify({'error': 'Failed to fetch player page'}), 500
+            app.logger.error(f"Failed to fetch Wikipedia page for: {page_title}")
+            return jsonify({
+                'error': 'Failed to fetch player page',
+                'details': f"Could not retrieve the Wikipedia page for {page_title}. This might be a temporary issue."
+            }), 500
+        
+        # Check if this is actually a footballer
+        if not is_footballer(page_title, page_html):
+            app.logger.warning(f"Page found but not a footballer: {page_title}")
+            return jsonify({
+                'error': 'Not a footballer',
+                'details': f"The page for {page_title} doesn't appear to be about a footballer. Try a more specific search."
+            }), 400
         
         # Extract career information
+        app.logger.info(f"Extracting career information for: {page_title}")
         career_info = extract_career_info(page_html, player_name)
-        if not career_info:
-            return jsonify({'error': 'Failed to extract career information'}), 500
+        
+        if not career_info or not career_info.get('clubs'):
+            app.logger.warning(f"Failed to extract career information for: {page_title}")
+            # Try to provide more context about what was found
+            info_found = "No career information could be extracted"
+            if career_info:
+                info_found = f"Found: {', '.join(career_info.keys())}"
+                
+            return jsonify({
+                'error': 'Failed to extract career information',
+                'details': f"Could not find career details on the Wikipedia page. {info_found}.",
+                'page_title': page_title,
+                'partial_data': career_info or {}
+            }), 500
         
         # Obscure the player's name
+        app.logger.info(f"Obscuring player name for: {page_title}")
         obscured_info = obscure_player_name(career_info, player_name)
         
+        app.logger.info(f"Successfully processed player data for: {page_title}")
         return jsonify({
             'player': {
                 'search_query': player_name,
-                'wikipedia_title': search_results[0],
+                'wikipedia_title': page_title,
                 'career': obscured_info
             }
         })
     
     except Exception as e:
         app.logger.error(f"Error processing player data: {str(e)}")
-        return jsonify({'error': 'An unexpected error occurred'}), 500
+        app.logger.error(traceback.format_exc())
+        return jsonify({
+            'error': 'An unexpected error occurred',
+            'details': str(e) if app.config['DEBUG'] else "Please try again later."
+        }), 500
 
 @app.route('/api/suggest', methods=['GET'])
-def suggest_players():
+def suggest_player_names():
     """API endpoint to suggest players for autocomplete."""
     query = request.args.get('q', '')
     if len(query) < 2:
         return jsonify({'suggestions': []})
     
     try:
-        from core.wiki import suggest_players as wiki_suggest_players
-        suggestions = wiki_suggest_players(query)
+        suggestions = suggest_players(query)
         return jsonify({'suggestions': suggestions})
     except Exception as e:
         app.logger.error(f"Error suggesting players: {str(e)}")
         return jsonify({'error': 'Failed to get suggestions', 'suggestions': []}), 500
+
+@app.route('/api/debug', methods=['GET'])
+def debug_info():
+    """Debug endpoint to check API connectivity (only available in debug mode)."""
+    if not app.config['DEBUG']:
+        return jsonify({'error': 'Debug endpoint only available in development mode'}), 403
+        
+    player_name = request.args.get('name', 'Lionel Messi')
+    
+    try:
+        # Test search
+        search_results = search_player(player_name)
+        
+        # Test page retrieval
+        page_html = None
+        page_title = None
+        if search_results:
+            page_title = search_results[0]
+            page_html = get_player_page(page_title)
+            
+        # Test footballer detection
+        is_football_player = False
+        if page_html:
+            is_football_player = is_footballer(page_title, page_html)
+            
+        # Return debug info
+        return jsonify({
+            'debug_info': {
+                'player_name': player_name,
+                'search_results': search_results,
+                'page_title': page_title,
+                'page_retrieved': page_html is not None,
+                'is_footballer': is_football_player,
+                'html_length': len(page_html) if page_html else 0,
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error in debug endpoint: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({
+            'error': 'Debug API error',
+            'details': str(e),
+            'traceback': traceback.format_exc() if app.config['DEBUG'] else None
+        }), 500
 
 @app.errorhandler(404)
 def page_not_found(e):
@@ -115,7 +205,7 @@ def demo():
     with open('mock_data/example_player.json', 'r') as f:
         mock_data = json.load(f)
     
-    return render_template('quiz.html', 
+    return render_template('quiz_improved.html', 
                           player_name=mock_data['player']['search_query'],
                           demo_mode=True,
                           mock_data=mock_data,
