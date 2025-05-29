@@ -512,3 +512,90 @@ footer {
     gap: 8px;
   }
 }
+
+/* ===== ENHANCED LOADING SPINNER & PROGRESS BAR ===== */
+.progress-container {
+  width: 100%;
+  max-width: 400px;
+  margin: 15px auto;
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  overflow: hidden;
+  height: 10px;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0;
+  background-color: var(--primary-color);
+  transition: width 0.5s ease;
+}
+
+.progress-text {
+  font-size: 0.8rem;
+  color: var(--light-text);
+  text-align: center;
+  margin-top: 5px;
+}
+
+/* ===== ENHANCED ERROR DISPLAY ===== */
+.error-icon {
+  font-size: 3rem;
+  color: var(--error-color);
+  margin-bottom: 1rem;
+}
+
+.error-details {
+  color: var(--light-text);
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.error-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 1.5rem 0;
+}
+
+@media (max-width: 768px) {
+  .error-actions {
+    flex-direction: column;
+  }
+}
+
+/* ===== DEBUG INFO SECTION ===== */
+.debug-info {
+  margin-top: 2rem;
+  padding: 1rem;
+  background-color: #f8f8f8;
+  border-radius: var(--border-radius);
+  text-align: left;
+}
+
+.debug-info h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.debug-info pre {
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background-color: #f0f0f0;
+  padding: 10px;
+  border-radius: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ===== REVEALED PLAYER STATE ===== */
+.player-image-container.revealed .image-overlay {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* ===== ADDITIONAL BUTTONS ===== */
+.refresh-button {
+  margin-top: 1rem;
+}
