@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football Career Quiz - Guess Who?</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="container quiz-container">
+        <header>
+            <h1>Football Career Quiz</h1>
+            <p class="tagline">Who is this player?</p>
+        </header>
+
+        <div id="loading-section" class="loading-section">
+            <div class="spinner"></div>
+            <p>Searching for player and preparing quiz...</p>
+        </div>
+
+        <div id="error-section" class="error-section" style="display: none;">
+            <h2>Oops! Something went wrong</h2>
+            <p id="error-message">We couldn't find that player. Please try another name.</p>
+            <a href="{{ url_for('home') }}" class="button">Try Another Player</a>
+        </div>
+
+        <div id="quiz-content" class="quiz-content" style="display: none;">
+            <div class="player-info">
+                <div class="player-header">
+                    <div class="player-image-container">
+                        <img id="player-image" src="" alt="Mystery Player" class="player-image">
+                        <div class="image-overlay">?</div>
+                    </div>
+                    <div class="player-basics">
+                        <h2 id="player-name" class="obscured-name">█████ █████</h2>
+                        <div class="player-details">
+                            <p id="player-position"></p>
+                            <p id="player-birth-date"></p>
+                            <p id="player-height"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section class="career-section">
+                <h3>Club Career</h3>
+                <div class="table-container">
+                    <table id="club-career-table" class="career-table">
+                        <thead>
+                            <tr>
+                                <th>Club</th>
+                                <th>Years</th>
+                                <th>Apps</th>
+                                <th>Goals</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Club career rows will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="career-section">
+                <h3>International Career</h3>
+                <div class="table-container">
+                    <table id="national-team-table" class="career-table">
+                        <thead>
+                            <tr>
+                                <th>Team</th>
+                                <th>Years</th>
+                                <th>Caps</th>
+                                <th>Goals</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- National team rows will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="honors-section">
+                <h3>Major Honors</h3>
+                <ul id="honors-list" class="honors-list">
+                    <!-- Honors will be inserted here -->
+                </ul>
+            </section>
+
+            <div class="quiz-controls">
+                <button id="reveal-button" class="button primary-button">Reveal Player</button>
+                <a href="{{ url_for('home') }}" class="button secondary-button">New Quiz</a>
+            </div>
+
+            <div id="answer-section" class="answer-section" style="display: none;">
+                <h2>The player is:</h2>
+                <h3 id="real-player-name" class="revealed-name"></h3>
+                <p>How quickly did your friend guess?</p>
+            </div>
+        </div>
+
+        <footer>
+            <p>Data sourced from Wikipedia. Created for educational and entertainment purposes.</p>
+            <p class="copyright">© {{ now.year }} Football Career Quiz</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const playerName = "{{ player_name }}";
+            const quizContent = document.getElementById('quiz-content');
+            const loadingSection = document.getElementById('loading-section');
+            const errorSection = document.getElementById('error-section');
+            const errorMessage = document.getElementById('error-message');
+            const revealButton = document.getElementById('reveal-button');
+            const answerSection = document.getElementById('answer-section');
+            const realPlayerName = document.getElementById('real-player-name');
+            
+            // For demo mode (when developing locally)
+            {% if demo_mode %}
+                loadMockData({{ mock_data|tojson }});
+                return;
+            {% endif %}
+            
+            // Fetch player data
+            fetchPlayerData(playerName);
+            
+            // Reveal button event listener
+            revealButton.addEventListener('click', function() {
+                // Show the answer section
+                answerSection.style.display = 'block';
+                
+                // Scroll to the answer
+                answerSection.scrollIntoView({ behavior: 'smooth' });
+                
+                // Change button text
+                revealButton.textContent = 'Answer Revealed!';
+                revealButton.disabled = true;
+            });
+            
+            // Function to fetch player data from the API
+            async function fetchPlayerData(name) {
+                try {
+                    const response = await fetch(`/api/player?name=${encodeURIComponent(name)}`);
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to fetch player data');
+                    }
+                    
+                    const data = await response.json();
+                    displayPlayerData(data.player);
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    loadingSection.style.display = 'none';
+                    errorSection.style.display = 'block';
+                    errorMessage.textContent = error.message || 'Failed to fetch player data. Please try another player.';
+                }
+            }
+            
+            // Function to display player data
+            function displayPlayerData(player) {
+                // Hide loading, show content
+                loadingSection.style.display = 'none';
+                quizContent.style.display = 'block';
+                
+                // Set the real player name for reveal
+                realPlayerName.textContent = player.wikipedia_title || player.search_query;
+                
+                // Set player basic info
+                document.getElementById('player-name').textContent = player.career.full_name || '█████ █████';
+                
+                if (player.career.position) {
+                    document.getElementById('player-position').textContent = `Position: ${player.career.position}`;
+                }
+                
+                if (player.career.birth_date) {
+                    document.getElementById('player-birth-date').textContent = `Born: ${player.career.birth_date}`;
+                }
+                
+                if (player.career.height) {
+                    document.getElementById('player-height').textContent = `Height: ${player.career.height}`;
+                }
+                
+                // Set player image if available
+                if (player.career.image_url) {
+                    const playerImage = document.getElementById('player-image');
+                    playerImage.src = player.career.image_url;
+                    playerImage.style.display = 'block';
+                }
+                
+                // Populate club career table
+                const clubTableBody = document.getElementById('club-career-table').getElementsByTagName('tbody')[0];
+                clubTableBody.innerHTML = '';
+                
+                if (player.career.clubs && player.career.clubs.length > 0) {
+                    player.career.clubs.forEach(club => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${club.name || '-'}</td>
+                            <td>${club.years || '-'}</td>
+                            <td>${club.apps || '-'}</td>
+                            <td>${club.goals || '-'}</td>
+                        `;
+                        clubTableBody.appendChild(row);
+                    });
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = '<td colspan="4">No club career data available</td>';
+                    clubTableBody.appendChild(row);
+                }
+                
+                // Populate national team table
+                const nationalTableBody = document.getElementById('national-team-table').getElementsByTagName('tbody')[0];
+                nationalTableBody.innerHTML = '';
+                
+                if (player.career.national_team && player.career.national_team.length > 0) {
+                    player.career.national_team.forEach(team => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${team.name || '-'}</td>
+                            <td>${team.years || '-'}</td>
+                            <td>${team.apps || '-'}</td>
+                            <td>${team.goals || '-'}</td>
+                        `;
+                        nationalTableBody.appendChild(row);
+                    });
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = '<td colspan="4">No international career data available</td>';
+                    nationalTableBody.appendChild(row);
+                }
+                
+                // Populate honors list
+                const honorsList = document.getElementById('honors-list');
+                honorsList.innerHTML = '';
+                
+                if (player.career.honors && player.career.honors.length > 0) {
+                    player.career.honors.forEach(honor => {
+                        const item = document.createElement('li');
+                        item.textContent = honor;
+                        honorsList.appendChild(item);
+                    });
+                } else {
+                    const item = document.createElement('li');
+                    item.textContent = 'No major honors found';
+                    honorsList.appendChild(item);
+                }
+            }
+            
+            // Function to load mock data for development
+            function loadMockData(mockData) {
+                loadingSection.style.display = 'none';
+                displayPlayerData(mockData.player);
+            }
+        });
+    </script>
+</body>
+</html>

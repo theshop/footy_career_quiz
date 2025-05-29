@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football Career Quiz</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Football Career Quiz</h1>
+            <p class="tagline">Guess the footballer from their career path!</p>
+        </header>
+
+        <section class="game-instructions">
+            <h2>How to Play</h2>
+            <ol>
+                <li>Enter any professional footballer's name</li>
+                <li>We'll find their Wikipedia page and hide their identity</li>
+                <li>Hand your device to a friend and see if they can guess who it is</li>
+                <li>The ultimate test for football knowledge!</li>
+            </ol>
+        </section>
+
+        <section class="search-section">
+            <form action="{{ url_for('search') }}" method="POST" id="player-search-form">
+                <div class="search-container">
+                    <input 
+                        type="text" 
+                        name="player_name" 
+                        id="player-name-input" 
+                        placeholder="Enter a footballer's name..." 
+                        autocomplete="off" 
+                        required
+                    >
+                    <button type="submit" class="search-button">
+                        <i class="fas fa-search"></i> Find Player
+                    </button>
+                </div>
+                <div id="suggestions" class="suggestions-container"></div>
+            </form>
+        </section>
+
+        <section class="examples">
+            <h3>Try these players:</h3>
+            <div class="example-players">
+                <span class="example-player" onclick="fillPlayerName('Lionel Messi')">Lionel Messi</span>
+                <span class="example-player" onclick="fillPlayerName('Cristiano Ronaldo')">Cristiano Ronaldo</span>
+                <span class="example-player" onclick="fillPlayerName('Zinedine Zidane')">Zinedine Zidane</span>
+                <span class="example-player" onclick="fillPlayerName('Thierry Henry')">Thierry Henry</span>
+                <span class="example-player" onclick="fillPlayerName('Megan Rapinoe')">Megan Rapinoe</span>
+            </div>
+        </section>
+
+        <footer>
+            <p>Data sourced from Wikipedia. Created for educational and entertainment purposes.</p>
+            <p class="copyright">© {{ now.year }} Football Career Quiz</p>
+        </footer>
+    </div>
+
+    <script>
+        // Fill the search input with example player names
+        function fillPlayerName(name) {
+            document.getElementById('player-name-input').value = name;
+            document.getElementById('player-search-form').submit();
+        }
+
+        // Simple debounce function to limit API calls
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        // Autocomplete functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const input = document.getElementById('player-name-input');
+            const suggestionsContainer = document.getElementById('suggestions');
+            
+            // Function to fetch suggestions
+            const fetchSuggestions = debounce(async function(query) {
+                if (query.length < 3) {
+                    suggestionsContainer.innerHTML = '';
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    
+                    const data = await response.json();
+                    
+                    // Display suggestions
+                    suggestionsContainer.innerHTML = '';
+                    if (data.suggestions && data.suggestions.length) {
+                        data.suggestions.forEach(suggestion => {
+                            const div = document.createElement('div');
+                            div.className = 'suggestion-item';
+                            div.textContent = suggestion.name;
+                            div.addEventListener('click', function() {
+                                input.value = suggestion.name;
+                                suggestionsContainer.innerHTML = '';
+                                document.getElementById('player-search-form').submit();
+                            });
+                            suggestionsContainer.appendChild(div);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error fetching suggestions:', error);
+                }
+            }, 300);
+            
+            // Listen for input changes
+            input.addEventListener('input', function() {
+                fetchSuggestions(this.value);
+            });
+            
+            // Close suggestions when clicking outside
+            document.addEventListener('click', function(e) {
+                if (e.target !== input && e.target !== suggestionsContainer) {
+                    suggestionsContainer.innerHTML = '';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
