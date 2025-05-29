@@ -106,13 +106,6 @@
                 </div>
             </section>
 
-            <section class="honors-section">
-                <h3>Major Honors</h3>
-                <ul id="honors-list" class="honors-list">
-                    <!-- Honors will be inserted here -->
-                </ul>
-            </section>
-
             <div class="quiz-controls">
                 <button id="reveal-button" class="button primary-button">
                     <i class="fas fa-eye"></i> Reveal Player
@@ -422,22 +415,6 @@
                     const row = document.createElement('tr');
                     row.innerHTML = '<td colspan="4">No international career data available</td>';
                     nationalTableBody.appendChild(row);
-                }
-                
-                // Populate honors list
-                const honorsList = document.getElementById('honors-list');
-                honorsList.innerHTML = '';
-                
-                if (player.career.honors && player.career.honors.length > 0) {
-                    player.career.honors.forEach(honor => {
-                        const item = document.createElement('li');
-                        item.textContent = honor;
-                        honorsList.appendChild(item);
-                    });
-                } else {
-                    const item = document.createElement('li');
-                    item.textContent = 'No major honors found';
-                    honorsList.appendChild(item);
                 }
             }
             
