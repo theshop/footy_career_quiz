@@ -50,7 +50,6 @@ def extract_career_info(page_html: str, player_name: str) -> Dict[str, Any]:
             "height": extract_height(soup),
             "clubs": extract_club_career(soup),
             "national_team": extract_national_team(soup),
-            "honors": extract_honors(soup),
             "image_url": extract_player_image(soup)
         }
         
@@ -93,7 +92,7 @@ def extract_position(soup: BeautifulSoup) -> Optional[str]:
     position_row = None
     for row in infobox.find_all('tr'):
         header = row.find('th')
-        if header and 'position' in header.text.lower():
+        if header and ('position' in header.text.lower() or 'playing position' in header.text.lower()):
             position_row = row
             break
     
@@ -103,8 +102,9 @@ def extract_position(soup: BeautifulSoup) -> Optional[str]:
             return clean_text(position_cell.text)
     
     # Alternative approach: look in the first paragraph
-    first_para = soup.find('div', {'class': 'mw-parser-output'}).find('p')
-    if first_para:
+    first_para = soup.find('div', {'class': 'mw-parser-output'})
+    if first_para and first_para.find('p'):
+        first_para = first_para.find('p')
         positions = ['goalkeeper', 'defender', 'midfielder', 'forward', 'striker', 'winger', 'centre-back', 'full-back']
         para_text = first_para.text.lower()
         for pos in positions:
@@ -130,7 +130,7 @@ def extract_birth_date(soup: BeautifulSoup) -> Optional[str]:
     # Look for birth date in the infobox
     for row in infobox.find_all('tr'):
         header = row.find('th')
-        if header and ('birth date' in header.text.lower() or 'born' in header.text.lower()):
+        if header and ('birth date' in header.text.lower() or 'born' in header.text.lower() or 'date of birth' in header.text.lower()):
             birth_cell = row.find('td')
             if birth_cell:
                 # Try to find a specific birth date span
@@ -173,7 +173,7 @@ def extract_club_career(soup: BeautifulSoup) -> List[Dict[str, str]]:
     clubs = []
     
     # Look for the club career section/table
-    career_section = find_section(soup, ['Career statistics', 'Club career', 'Club', 'Senior career'])
+    career_section = find_section(soup, ['Career statistics', 'Club career', 'Club', 'Senior career', 'Playing career'])
     if not career_section:
         return clubs
     
@@ -190,9 +190,24 @@ def extract_club_career(soup: BeautifulSoup) -> List[Dict[str, str]]:
                 tables.append(current)
                 current = current.find_next('table', {'class': 'wikitable'})
     
+    # List of known national team keywords to exclude from club career
+    national_team_keywords = [
+        'national team', 'international', 'brazil', 'argentina', 'england', 'france', 'germany', 
+        'italy', 'spain', 'portugal', 'netherlands', 'belgium', 'croatia', 'uruguay', 'colombia',
+        'mexico', 'japan', 'south korea', 'australia', 'united states', 'canada', 'nigeria', 
+        'senegal', 'ivory coast', 'ghana', 'cameroon', 'egypt', 'morocco', 'algeria', 'tunisia',
+        'u-', 'under-', 'u17', 'u19', 'u20', 'u21', 'u23'
+    ]
+    
+    # List of rows to exclude (headers, totals, etc.)
+    exclude_rows = [
+        'total', 'career total', 'career statistics', 'division', 'league', 'season',
+        'apps', 'appearances', 'goals', 'year', 'years', 'caps', 'matches'
+    ]
+    
     for table in tables:
         # Check if this table has club career data
-        headers = [th.text.strip().lower() for th in table.find_all('th')]
+        headers = [clean_text(th.text).lower() for th in table.find_all('th')]
         if not headers:
             continue
         
@@ -220,22 +235,45 @@ def extract_club_career(soup: BeautifulSoup) -> List[Dict[str, str]]:
             if len(cells) == 1 or (cells[0].name == 'th' and cells[0].get('colspan')):
                 continue
             
-            club_name = cells[club_idx].text.strip()
+            # Get club name and clean it
+            club_name = clean_text(cells[club_idx].text)
             
-            # Skip totals or empty rows
-            if not club_name or club_name.lower() in ['total', 'career total', 'career statistics']:
+            # Skip empty rows or non-club rows
+            if not club_name:
+                continue
+                
+            # Skip rows with national team keywords
+            club_name_lower = club_name.lower()
+            if any(keyword in club_name_lower for keyword in national_team_keywords):
+                continue
+                
+            # Skip rows with exclude keywords
+            if any(exclude in club_name_lower for exclude in exclude_rows):
                 continue
             
+            # Create club info dictionary
             club_info = {"name": club_name}
             
+            # Extract years, making sure it's actually years and not something else
             if years_idx is not None and years_idx < len(cells):
-                club_info["years"] = clean_text(cells[years_idx].text)
+                years_text = clean_text(cells[years_idx].text)
+                # Check if it looks like years (contains digits and possibly hyphens)
+                if re.search(r'\d', years_text) and len(years_text) < 15:
+                    club_info["years"] = years_text
             
+            # Extract appearances, making sure it's actually a number
             if apps_idx is not None and apps_idx < len(cells):
-                club_info["apps"] = clean_text(cells[apps_idx].text)
+                apps_text = clean_text(cells[apps_idx].text)
+                # Check if it looks like a number or has numeric content
+                if re.search(r'\d', apps_text) and not re.search(r'\d{4}', apps_text):  # Avoid years in apps column
+                    club_info["apps"] = apps_text
             
+            # Extract goals, making sure it's actually a number
             if goals_idx is not None and goals_idx < len(cells):
-                club_info["goals"] = clean_text(cells[goals_idx].text)
+                goals_text = clean_text(cells[goals_idx].text)
+                # Check if it looks like a number
+                if re.search(r'\d', goals_text) and not re.search(r'\d{4}', goals_text):  # Avoid years in goals column
+                    club_info["goals"] = goals_text
             
             clubs.append(club_info)
     
@@ -247,31 +285,74 @@ def extract_national_team(soup: BeautifulSoup) -> List[Dict[str, str]]:
     national_teams = []
     
     # Look for the international career section/table
-    career_section = find_section(soup, ['International career', 'National team', 'International'])
+    career_section = find_section(soup, ['International career', 'National team', 'International', 'National team career'])
+    
+    # List of known national team keywords to help identify rows
+    national_team_keywords = [
+        'national team', 'international', 'brazil', 'argentina', 'england', 'france', 'germany', 
+        'italy', 'spain', 'portugal', 'netherlands', 'belgium', 'croatia', 'uruguay', 'colombia',
+        'mexico', 'japan', 'south korea', 'australia', 'united states', 'canada', 'nigeria', 
+        'senegal', 'ivory coast', 'ghana', 'cameroon', 'egypt', 'morocco', 'algeria', 'tunisia',
+        'u-', 'under-', 'u17', 'u19', 'u20', 'u21', 'u23'
+    ]
+    
+    # If no dedicated section, try to find international data in club career tables
     if not career_section:
-        # If no dedicated section, try to find it in the club career tables
         club_career_tables = soup.find_all('table', {'class': 'wikitable'})
         for table in club_career_tables:
-            rows = table.find_all('tr')
-            for row in rows:
+            headers = [clean_text(th.text).lower() for th in table.find_all('th')]
+            
+            # Check if this table has team/country column
+            team_idx = next((i for i, h in enumerate(headers) if 'team' in h or 'country' in h or 'national' in h), None)
+            if team_idx is None:
+                continue
+                
+            # Check for years, apps, goals columns
+            years_idx = next((i for i, h in enumerate(headers) if 'years' in h or 'season' in h), None)
+            apps_idx = next((i for i, h in enumerate(headers) if 'app' in h or 'caps' in h or 'games' in h), None)
+            goals_idx = next((i for i, h in enumerate(headers) if 'goal' in h or 'score' in h), None)
+            
+            # Process rows
+            for row in table.find_all('tr')[1:]:  # Skip header row
                 cells = row.find_all(['td', 'th'])
-                for cell in cells:
-                    if cell.text.strip().lower() in ['national team', 'international']:
-                        # Found national team data in this table
-                        national_team_row = row.find_next('tr')
-                        if national_team_row:
-                            team_cells = national_team_row.find_all('td')
-                            if len(team_cells) >= 3:
-                                national_teams.append({
-                                    "name": clean_text(team_cells[0].text),
-                                    "years": clean_text(team_cells[1].text) if len(team_cells) > 1 else "",
-                                    "apps": clean_text(team_cells[2].text) if len(team_cells) > 2 else "",
-                                    "goals": clean_text(team_cells[3].text) if len(team_cells) > 3 else ""
-                                })
+                if len(cells) <= team_idx:
+                    continue
+                
+                # Skip rows that are section headers
+                if len(cells) == 1 or (cells[0].name == 'th' and cells[0].get('colspan')):
+                    continue
+                
+                # Get team name and clean it
+                team_name = clean_text(cells[team_idx].text)
+                team_name_lower = team_name.lower()
+                
+                # Only include if it looks like a national team
+                if any(keyword in team_name_lower for keyword in national_team_keywords):
+                    team_info = {"name": team_name}
+                    
+                    # Extract years
+                    if years_idx is not None and years_idx < len(cells):
+                        years_text = clean_text(cells[years_idx].text)
+                        if re.search(r'\d', years_text):
+                            team_info["years"] = years_text
+                    
+                    # Extract appearances
+                    if apps_idx is not None and apps_idx < len(cells):
+                        apps_text = clean_text(cells[apps_idx].text)
+                        if re.search(r'\d', apps_text):
+                            team_info["apps"] = apps_text
+                    
+                    # Extract goals
+                    if goals_idx is not None and goals_idx < len(cells):
+                        goals_text = clean_text(cells[goals_idx].text)
+                        if re.search(r'\d', goals_text):
+                            team_info["goals"] = goals_text
+                    
+                    national_teams.append(team_info)
         
         return national_teams
     
-    # Find tables in the section
+    # If we have a dedicated international section, process it
     tables = career_section.find_all('table', {'class': 'wikitable'})
     
     # If no tables found, try to find any wikitable after the section
@@ -284,9 +365,15 @@ def extract_national_team(soup: BeautifulSoup) -> List[Dict[str, str]]:
                 tables.append(current)
                 current = current.find_next('table', {'class': 'wikitable'})
     
+    # List of rows to exclude
+    exclude_rows = [
+        'total', 'career total', 'career statistics', 'division', 'league', 'season',
+        'apps', 'appearances', 'goals', 'year', 'years', 'caps', 'matches'
+    ]
+    
     for table in tables:
         # Check if this table has national team data
-        headers = [th.text.strip().lower() for th in table.find_all('th')]
+        headers = [clean_text(th.text).lower() for th in table.find_all('th')]
         if not headers:
             continue
         
@@ -296,13 +383,13 @@ def extract_national_team(soup: BeautifulSoup) -> List[Dict[str, str]]:
             continue
         
         # Find the indices for relevant columns
-        team_idx = next((i for i, h in enumerate(headers) if 'team' in h or 'country' in h), None)
+        team_idx = next((i for i, h in enumerate(headers) if 'team' in h or 'country' in h or 'national' in h), None)
+        if team_idx is None:
+            team_idx = 0  # Default to first column if no team column found
+            
         years_idx = next((i for i, h in enumerate(headers) if 'years' in h or 'period' in h), None)
         apps_idx = next((i for i, h in enumerate(headers) if 'app' in h or 'caps' in h or 'games' in h), None)
         goals_idx = next((i for i, h in enumerate(headers) if 'goal' in h or 'score' in h), None)
-        
-        if team_idx is None:
-            continue
         
         # Process rows
         for row in table.find_all('tr')[1:]:  # Skip header row
@@ -314,30 +401,98 @@ def extract_national_team(soup: BeautifulSoup) -> List[Dict[str, str]]:
             if len(cells) == 1 or (cells[0].name == 'th' and cells[0].get('colspan')):
                 continue
             
-            team_name = cells[team_idx].text.strip()
+            # Get team name and clean it
+            team_name = clean_text(cells[team_idx].text)
+            team_name_lower = team_name.lower()
             
             # Skip totals or empty rows
-            if not team_name or team_name.lower() in ['total', 'career total']:
+            if not team_name or any(exclude in team_name_lower for exclude in exclude_rows):
                 continue
             
+            # Create team info dictionary
             team_info = {"name": team_name}
             
+            # Extract years
             if years_idx is not None and years_idx < len(cells):
-                team_info["years"] = clean_text(cells[years_idx].text)
+                years_text = clean_text(cells[years_idx].text)
+                if years_text and years_text != "-":
+                    team_info["years"] = years_text
             
+            # Extract appearances
             if apps_idx is not None and apps_idx < len(cells):
-                team_info["apps"] = clean_text(cells[apps_idx].text)
+                apps_text = clean_text(cells[apps_idx].text)
+                if apps_text and apps_text != "-":
+                    team_info["apps"] = apps_text
             
+            # Extract goals
             if goals_idx is not None and goals_idx < len(cells):
-                team_info["goals"] = clean_text(cells[goals_idx].text)
+                goals_text = clean_text(cells[goals_idx].text)
+                if goals_text and goals_text != "-":
+                    team_info["goals"] = goals_text
             
             national_teams.append(team_info)
+    
+    # Also look for international data in the main career table
+    # This helps when national team data is mixed with club data
+    if not national_teams:
+        club_tables = soup.find_all('table', {'class': 'wikitable'})
+        for table in club_tables:
+            headers = [clean_text(th.text).lower() for th in table.find_all('th')]
+            
+            # Find the team column
+            team_idx = next((i for i, h in enumerate(headers) if 'club' in h or 'team' in h), None)
+            if team_idx is None:
+                continue
+                
+            # Find other columns
+            years_idx = next((i for i, h in enumerate(headers) if 'years' in h or 'season' in h), None)
+            apps_idx = next((i for i, h in enumerate(headers) if 'app' in h or 'caps' in h or 'games' in h), None)
+            goals_idx = next((i for i, h in enumerate(headers) if 'goal' in h or 'score' in h), None)
+            
+            # Process rows
+            for row in table.find_all('tr')[1:]:
+                cells = row.find_all(['td', 'th'])
+                if len(cells) <= team_idx:
+                    continue
+                
+                # Get team name
+                team_name = clean_text(cells[team_idx].text)
+                team_name_lower = team_name.lower()
+                
+                # Check if this is a national team
+                if any(keyword in team_name_lower for keyword in national_team_keywords):
+                    # Skip if we already have this team
+                    if any(team["name"].lower() == team_name_lower for team in national_teams):
+                        continue
+                        
+                    team_info = {"name": team_name}
+                    
+                    # Extract years
+                    if years_idx is not None and years_idx < len(cells):
+                        years_text = clean_text(cells[years_idx].text)
+                        if re.search(r'\d', years_text):
+                            team_info["years"] = years_text
+                    
+                    # Extract appearances
+                    if apps_idx is not None and apps_idx < len(cells):
+                        apps_text = clean_text(cells[apps_idx].text)
+                        if re.search(r'\d', apps_text) and not re.search(r'\d{4}', apps_text):
+                            team_info["apps"] = apps_text
+                    
+                    # Extract goals
+                    if goals_idx is not None and goals_idx < len(cells):
+                        goals_text = clean_text(cells[goals_idx].text)
+                        if re.search(r'\d', goals_text) and not re.search(r'\d{4}', goals_text):
+                            team_info["goals"] = goals_text
+                    
+                    national_teams.append(team_info)
     
     return national_teams
 
 
 def extract_honors(soup: BeautifulSoup) -> List[str]:
     """Extract the player's honors and achievements from the Wikipedia page."""
+    # Note: This function is kept for completeness but the honors section is not displayed in the UI
     honors = []
     
     # Look for the honours section
@@ -408,21 +563,36 @@ def find_section(soup: BeautifulSoup, section_titles: List[str]) -> Optional[Tag
 
 
 def clean_text(text: str) -> str:
-    """Clean text by removing citations, excessive whitespace, etc."""
+    """Clean text by removing citations, excessive whitespace, footnotes, etc."""
     if not text:
         return ""
     
     # Remove citations
     text = re.sub(r'\[\d+\]', '', text)
     
+    # Remove footnote references like [247]
+    text = re.sub(r'\[\d+\]|\[\w+\]|\[\d+\w+\]', '', text)
+    
+    # Remove specific footnote patterns seen in the example
+    text = re.sub(r'\[\w+\d+\]', '', text)
+    
     # Remove parenthetical notes
     text = re.sub(r'\([^)]*\)', '', text)
+    
+    # Remove square brackets that might remain
+    text = re.sub(r'\[.*?\]', '', text)
     
     # Normalize whitespace
     text = re.sub(r'\s+', ' ', text)
     
     # Normalize unicode characters
     text = unicodedata.normalize('NFKC', text)
+    
+    # Remove any HTML tags that might be present
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Remove special characters that often appear in Wikipedia tables
+    text = text.replace('†', '').replace('‡', '').replace('*', '')
     
     return text.strip()
 
