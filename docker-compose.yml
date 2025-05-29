@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: footy-career-quiz:latest
+    container_name: footy-career-quiz
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=change_this_in_production
+      - PORT=8000
+    volumes:
+      # For development: mount these directories to see changes without rebuilding
+      - ./core:/app/core
+      - ./frontend:/app/frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    command: python app.py --host=0.0.0.0 --port=8000
+
+  # Development tools container (optional)
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: footy-career-quiz-dev:latest
+    container_name: footy-career-quiz-dev
+    ports:
+      - "8001:8000"
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=dev_key_for_football_quiz
+      - PORT=8000
+    volumes:
+      - .:/app
+    command: python app.py --host=0.0.0.0 --port=8000 --debug
+    profiles:
+      - dev
