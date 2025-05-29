@@ -108,6 +108,10 @@ def get_player_data():
         app.logger.info(f"Obscuring player name for: {page_title}")
         obscured_info = obscure_player_name(career_info, player_name)
         
+        # Explicitly remove honors data to match UI changes
+        if 'honors' in obscured_info:
+            del obscured_info['honors']
+        
         app.logger.info(f"Successfully processed player data for: {page_title}")
         return jsonify({
             'player': {
@@ -205,6 +209,10 @@ def demo():
     with open('mock_data/example_player.json', 'r') as f:
         mock_data = json.load(f)
     
+    # Remove honors from mock data to match UI changes
+    if 'honors' in mock_data['player']['career']:
+        del mock_data['player']['career']['honors']
+    
     return render_template('quiz_improved.html', 
                           player_name=mock_data['player']['search_query'],
                           demo_mode=True,
@@ -258,13 +266,8 @@ def main():
                         ],
                         "national_team": [
                             {"name": "Argentina", "years": "2005–", "apps": "180", "goals": "106"}
-                        ],
-                        "honors": [
-                            "FIFA World Cup: 2022",
-                            "Copa América: 2021",
-                            "Champions League: 2006, 2009, 2011, 2015",
-                            "Ballon d'Or: 7 times (2009–2012, 2015, 2019, 2021)"
                         ]
+                        # Honors field removed to match UI changes
                     }
                 }
             }
